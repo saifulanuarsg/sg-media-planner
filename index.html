@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SG Transit Atlas v3 — audience planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --ink:#0f172a; --mut:#64748b; --line:#e2e8f0; --bg:#f8fafc; --card:#ffffff;
+    --accent:#0d9488; --accent2:#f59e0b; --measured:#0369a1; --modelled:#7c3aed; --judge:#b45309;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  #app{display:flex;height:100%}
+  /* ---------- left panel ---------- */
+  #panel{width:398px;min-width:398px;display:flex;flex-direction:column;background:var(--card);border-right:1px solid var(--line);z-index:600}
+  header{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0 0 2px}
+  header .sub{font-size:11.5px;color:var(--mut)}
+  .badge{display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:99px;
+    padding:1px 9px;font-size:10.5px;font-weight:600;margin-top:6px}
+  #segs{padding:10px 12px;border-bottom:1px solid var(--line)}
+  .seg{display:flex;align-items:baseline;gap:8px;padding:5px 8px;border-radius:8px;cursor:pointer}
+  .seg:hover{background:var(--bg)} .seg.on{background:#f0fdfa;outline:1.5px solid var(--accent)}
+  .seg b{font-size:13px} .seg .tag{margin-left:auto;font-size:10px;color:var(--mut);white-space:nowrap}
+  #modebar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);font-size:12px}
+  #modebar button{border:1px solid var(--line);background:var(--card);border-radius:7px;padding:3px 10px;font-size:12px;cursor:pointer}
+  #modebar button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  #floornote{font-size:10.5px;color:var(--mut);margin-left:auto;display:none}
+  #ranks{flex:1;overflow-y:auto}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{position:sticky;top:0;background:var(--card);text-align:right;padding:7px 8px;border-bottom:1px solid var(--line);
+    font-size:10.5px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  thead th:first-child,thead th:nth-child(2){text-align:left}
+  thead th .lyr{display:block;font-size:9px;font-weight:700;letter-spacing:.05em}
+  .lyr.m{color:var(--modelled)} .lyr.me{color:var(--measured)}
+  tbody td{padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:right;cursor:pointer;font-variant-numeric:tabular-nums}
+  tbody td:first-child{color:var(--mut);text-align:left;width:30px}
+  tbody td:nth-child(2){text-align:left;font-weight:700}
+  tbody tr:hover{background:var(--bg)} tbody tr.sel{background:#f0fdfa}
+  .conf{font-size:10px;border-radius:99px;padding:1px 7px;font-weight:600}
+  .conf.medium{background:#e0f2fe;color:#075985} .conf.low{background:#fef9c3;color:#854d0e}
+  .conf.verylow{background:#fee2e2;color:#991b1b}
+  #methodbtn{border-top:1px solid var(--line);padding:9px 16px;font-size:12px;color:var(--mut);cursor:pointer;background:var(--card)}
+  #methodbtn:hover{color:var(--ink)}
+  /* ---------- map ---------- */
+  #map{flex:1;height:100%}
+  /* ---------- detail card ---------- */
+  #detail{position:absolute;top:12px;right:12px;width:330px;max-height:calc(100% - 24px);overflow-y:auto;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(15,23,42,.13);
+    z-index:650;display:none;padding:14px 16px}
+  #detail h2{font-size:14px;margin:0 26px 2px 0}
+  #detail .rname{font-size:11.5px;color:var(--mut);margin-bottom:8px}
+  #detail .x{position:absolute;top:10px;right:12px;border:0;background:none;font-size:16px;color:var(--mut);cursor:pointer}
+  .grp{margin:10px 0 0;padding-top:8px;border-top:1px solid var(--line)}
+  .grp h3{font-size:10px;letter-spacing:.06em;margin:0 0 5px;font-weight:700}
+  .grp h3.me{color:var(--measured)} .grp h3.mo{color:var(--modelled)} .grp h3.ju{color:var(--judge)} .grp h3.dg{color:var(--mut)}
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:1.5px 0}
+  .kv span:first-child{color:var(--mut)} .kv b{font-variant-numeric:tabular-nums}
+  .chips{margin-top:5px} .chip{display:inline-block;font-size:10px;background:#f5f3ff;color:#5b21b6;
+    border:1px solid #ddd6fe;border-radius:99px;padding:1px 7px;margin:2px 3px 0 0}
+  .mixbar{display:flex;height:12px;border-radius:6px;overflow:hidden;margin:5px 0 3px}
+  .mixbar div{height:100%} .mixleg{font-size:10.5px;color:var(--mut)}
+  .note{font-size:10.5px;color:var(--mut);margin-top:4px;font-style:italic}
+  /* ---------- method modal ---------- */
+  #method{position:absolute;inset:0;background:rgba(15,23,42,.45);z-index:900;display:none;align-items:center;justify-content:center}
+  #method>div{background:var(--card);border-radius:14px;max-width:640px;max-height:82vh;overflow-y:auto;padding:22px 26px;margin:16px}
+  #method h2{margin:0 0 8px;font-size:16px} #method h3{font-size:12.5px;margin:14px 0 4px}
+  #method p,#method li{font-size:12.5px;color:#334155} #method ul{padding-left:18px;margin:4px 0}
+  #method .x{float:right;border:0;background:none;font-size:18px;color:var(--mut);cursor:pointer}
+  .legend{position:absolute;bottom:22px;right:12px;z-index:640;background:rgba(255,255,255,.93);border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-size:11px}
+  .legend .row{display:flex;align-items:center;gap:6px;padding:1px 0}
+  .legend .sw{width:14px;height:11px;border-radius:3px}
+  @media (max-width:820px){ #panel{width:min(85vw,398px);min-width:0} #detail{width:min(85vw,330px)} }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <header>
+      <h1>SG Transit Atlas <span style="color:var(--accent)">v3</span> — audience planner</h1>
+      <div class="sub">Bus routes ranked for a target audience · internal (passenger) model · Ship&nbsp;1</div>
+      <span class="badge">All figures modelled, not measured</span>
+    </header>
+    <div id="segs"></div>
+    <div id="modebar">
+      Rank by
+      <button id="mTI" class="on">Target boardings</button>
+      <button id="mIDX">Audience index</button>
+      <span id="floornote"></span>
+    </div>
+    <div id="ranks">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Svc</th>
+          <th><span class="lyr m">modelled</span>Target/wd</th>
+          <th><span class="lyr m">modelled</span>Index</th>
+          <th><span class="lyr m">modelled</span>Conf.</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div id="methodbtn">ⓘ Method, sources &amp; assumptions</div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<div id="detail">
+  <button class="x" onclick="closeDetail()">✕</button>
+  <h2 id="dSvc"></h2><div class="rname" id="dName"></div>
+  <div id="dBody"></div>
+</div>
+
+<div class="legend" id="legend"></div>
+
+<div id="method"><div>
+  <button class="x" onclick="document.getElementById('method').style.display='none'">✕</button>
+  <h2>Method — three layers, kept separate</h2>
+  <p><b style="color:var(--measured)">Measured</b> figures come directly from a published dataset and are cited.
+     <b style="color:var(--modelled)">Modelled</b> figures are derived by inference or spatial join; each carries its
+     assumption chain and a confidence label. <b style="color:var(--judge)">Judgement</b> inputs are planner assertions,
+     marked as such — none are applied in Ship&nbsp;1. No blended score exists: a route gets target boardings
+     (volume) and an audience index (concentration), never one number.</p>
+  <h3>Sources</h3><ul id="srcList"></ul>
+  <h3>Stated assumptions (Ship 1)</h3><ul id="assumpList"></ul>
+  <h3>Confidence labels</h3>
+  <p>Subzone-based segments start at <i>medium</i>; planning-area segments start at <i>low</i> (coarser geometry).
+     The label widens when less than 80% of a route's allocated volume has audience data, or when more than 10%
+     comes from index-capped subzones. Nothing is labelled better than medium: the residence join
+     (boarders&nbsp;≈&nbsp;catchment residents) is unverified and applies to every figure.</p>
+  <h3>Ethnicity</h3>
+  <p>Ethnic composition is shown per route and subzone as creative and language guidance only — festive timing,
+     language mix. It is not a selectable audience filter and enters no score, by design.</p>
+  <h3>Resonance</h3>
+  <p>Not scored — it cannot be derived from open data. It is measured post-campaign (brand-lift vs matched
+     control), never asserted pre-campaign.</p>
+  <p style="margin-top:12px;color:var(--mut);font-size:11.5px">Singapore Open Data Licence — LTA DataMall, SingStat, URA, HDB.
+     Index cap ×3 national. Index-ranking volume floor applies. Built 18 Jul 2026.</p>
+</div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SEGS = [
+  {k:'parents', label:'Parents with young children', d:'share of residents aged 0–9', tag:'subzone · Census 2020'},
+  {k:'seniors', label:'Seniors', d:'share of residents 65+', tag:'subzone · Census 2020'},
+  {k:'affluent', label:'Affluent', d:'condo + landed share (income proxy)', tag:'subzone · Census 2020'},
+  {k:'movers', label:'New movers', d:'HDB resale transactions per resident, 12 mo', tag:'planning area · HDB'},
+  {k:'daytime', label:'Daytime workforce', d:'workplace population per resident', tag:'planning area · Census 2020'},
+];
+const BINS = [70,90,110,140];                       // index classes vs national=100
+const COLS = ['#e2e8f0','#bae6fd','#7dd3fc','#38bdf8','#0284c7'];
+const MIXC = {chinese:'#94a3b8', malay:'#34d399', indian:'#f59e0b', others:'#c084fc'};
+let seg='parents', mode='ti', DATA=null, SUB=null, ROUTES=null, sel=null;
+let map, szLayer, routeLayers={};
+
+const fmt = n => n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : ''+Math.round(n);
+const cls = v => v==null?-1 : v<BINS[0]?0 : v<BINS[1]?1 : v<BINS[2]?2 : v<BINS[3]?3 : 4;
+const confCls = c => c==='very low' ? 'verylow' : c;
+
+async function boot(){
+  const [sc, sub, rt] = await Promise.all(
+    ['data/scores.json','data/subzones.json','data/routes.json'].map(u=>fetch(u).then(r=>r.json())));
+  DATA=sc; SUB=sub; ROUTES=rt;
+  document.getElementById('floornote').textContent =
+    `volume floor ${fmt(sc.meta.index_mode_floor)} allocated boardings`;
+  sc.meta && fillMethod(sc.meta);
+  buildSegs(); buildMap(); render();
+}
+function fillMethod(meta){
+  const s=document.getElementById('srcList');
+  Object.values(meta.sources).forEach(v=>{const li=document.createElement('li');li.textContent=v;s.appendChild(li);});
+  const a=document.getElementById('assumpList');
+  meta.assumptions.forEach(v=>{const li=document.createElement('li');li.textContent=v;a.appendChild(li);});
+}
+function buildSegs(){
+  const el=document.getElementById('segs');
+  SEGS.forEach(s=>{
+    const d=document.createElement('div'); d.className='seg'+(s.k===seg?' on':''); d.id='seg-'+s.k;
+    d.innerHTML=`<b>${s.label}</b><span style="font-size:11px;color:var(--mut)">${s.d}</span><span class="tag">${s.tag}</span>`;
+    d.onclick=()=>{seg=s.k; document.querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));
+      d.classList.add('on'); render();};
+    el.appendChild(d);
+  });
+  document.getElementById('mTI').onclick=e=>{mode='ti';toggleMode(e.target);};
+  document.getElementById('mIDX').onclick=e=>{mode='idx';toggleMode(e.target);};
+  document.getElementById('methodbtn').onclick=()=>document.getElementById('method').style.display='flex';
+}
+function toggleMode(btn){
+  document.querySelectorAll('#modebar button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('floornote').style.display = mode==='idx' ? 'inline' : 'none';
+  render();
+}
+function buildMap(){
+  map=L.map('map',{zoomControl:false}).setView([1.352,103.82],12);
+  L.control.zoom({position:'bottomleft'}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    {attribution:'© OpenStreetMap © CARTO',maxZoom:18}).addTo(map);
+  szLayer=L.geoJSON(SUB,{
+    style:f=>styleSz(f),
+    onEachFeature:(f,l)=>l.on('click',e=>{
+      const p=f.properties, v=p[seg];
+      let mix=''; if(p.mix){ mix=`<div class="mixbar" style="width:170px">${mixBarHtml(p.mix)}</div>
+        <div class="mixleg">${mixLegHtml(p.mix)}</div>
+        <div class="note">language guidance only — not a filter</div>`;}
+      l.bindPopup(`<b>${p.sz}</b> · ${p.pa}<br>residents ${p.pop.toLocaleString()}<br>
+        ${SEGS.find(s=>s.k===seg).label} index: <b>${v==null?'no data':v}</b> <span style="color:#64748b">(modelled)</span>${mix}`).openPopup();
+    })
+  }).addTo(map);
+  for(const [n,r] of Object.entries(ROUTES)){
+    const lines=r.segs.map(s=>s.map(([x,y])=>[y,x]));
+    routeLayers[n]=L.polyline(lines,{color:'#475569',weight:1,opacity:.28,interactive:true})
+      .addTo(map).on('click',()=>selectRoute(n));
+  }
+  legend();
+}
+const styleSz = f=>{
+  const c=cls(f.properties[seg]);
+  return {color:'#cbd5e1',weight:.6,fillColor:c<0?'#f8fafc':COLS[c],fillOpacity:c<0?.25:.62};
+};
+function legend(){
+  const el=document.getElementById('legend');
+  const lab=['<70','70–90','90–110','110–140','140+'];
+  el.innerHTML=`<b style="font-size:10.5px">${SEGS.find(s=>s.k===seg).label} — index (modelled)</b>`+
+    COLS.map((c,i)=>`<div class="row"><span class="sw" style="background:${c}"></span>${lab[i]}</div>`).join('')+
+    `<div class="row"><span class="sw" style="background:#f8fafc;border:1px solid var(--line)"></span>no data</div>`;
+}
+function ranked(){
+  const floor=DATA.meta.index_mode_floor;
+  return Object.entries(DATA.routes)
+    .filter(([n,r])=>r.seg[seg])
+    .filter(([n,r])=>mode==='ti'||r.alloc_wd>=floor)
+    .sort((a,b)=> mode==='ti'
+      ? b[1].seg[seg].ti - a[1].seg[seg].ti
+      : b[1].seg[seg].idx - a[1].seg[seg].idx);
+}
+function render(){
+  szLayer.setStyle(styleSz); legend();
+  const rows=document.getElementById('rows'); rows.innerHTML='';
+  const list=ranked().slice(0,30);
+  const inTop=new Set(list.map(x=>x[0]));
+  for(const [n,l] of Object.entries(routeLayers))
+    l.setStyle({color:'#475569',weight: inTop.has(n)?1.6:1, opacity: inTop.has(n)?.45:.15});
+  list.forEach(([n,r],i)=>{
+    const s=r.seg[seg];
+    const tr=document.createElement('tr'); if(n===sel)tr.className='sel';
+    tr.innerHTML=`<td>${i+1}</td><td>${n}</td><td>${fmt(s.ti)}</td><td>${s.idx}</td>
+      <td><span class="conf ${confCls(s.conf)}">${s.conf}</span></td>`;
+    tr.onclick=()=>selectRoute(n);
+    rows.appendChild(tr);
+  });
+  if(sel) selectRoute(sel,false);
+}
+function mixBarHtml(m){return Object.entries(MIXC).map(([k,c])=>
+  `<div style="width:${(m[k]*100).toFixed(1)}%;background:${c}"></div>`).join('');}
+function mixLegHtml(m){return `Chinese ${(m.chinese*100).toFixed(0)}% · Malay ${(m.malay*100).toFixed(0)}% · Indian ${(m.indian*100).toFixed(0)}% · Others ${(m.others*100).toFixed(0)}%`;}
+function selectRoute(n, zoom=true){
+  sel=n; const r=DATA.routes[n]; if(!r) return;
+  for(const [k,l] of Object.entries(routeLayers))
+    l.setStyle(k===n?{color:'#0d9488',weight:4,opacity:.95}:{color:'#475569',weight:1,opacity:.18});
+  if(zoom && routeLayers[n]) map.fitBounds(routeLayers[n].getBounds(),{padding:[40,40]});
+  const s=r.seg[seg]||{};
+  document.getElementById('dSvc').textContent='Service '+n;
+  document.getElementById('dName').textContent=r.name;
+  document.getElementById('dBody').innerHTML=`
+    <div class="grp"><h3 class="me">MEASURED — LTA DataMall PV</h3>
+      <div class="kv"><span>Weekday tap-ins at served stops</span><b>${r.raw_wd.toLocaleString()}</b></div>
+      <div class="kv"><span>Stops served</span><b>${r.stops}</b></div>
+    </div>
+    <div class="grp"><h3 class="mo">MODELLED — internal (passenger) model</h3>
+      <div class="kv"><span>Allocated boardings /wd</span><b>${r.alloc_wd.toLocaleString()}</b></div>
+      <div class="kv"><span>Target boardings /wd — ${SEGS.find(x=>x.k===seg).label}</span><b>${s.ti!=null?s.ti.toLocaleString():'no data'}</b></div>
+      <div class="kv"><span>Audience index (100 = national)</span><b>${s.idx??'—'}</b></div>
+      <div class="kv"><span>Data coverage of volume</span><b>${s.cov!=null?(s.cov*100).toFixed(0)+'%':'—'}</b></div>
+      <div class="kv"><span>Confidence</span><b><span class="conf ${confCls(s.conf||'low')}">${s.conf||'—'}</span></b></div>
+      <div class="chips"><span class="chip">equal-share allocation</span><span class="chip">residence join unverified</span><span class="chip">no ride-length factor</span>${s.capped_share>0?`<span class="chip">${(s.capped_share*100).toFixed(0)}% index-capped</span>`:''}</div>
+    </div>
+    <div class="grp"><h3 class="ju">JUDGEMENT</h3>
+      <div class="note">None applied in Ship 1. Context multipliers and format factors arrive with the format sheet.</div>
+    </div>
+    ${r.mix?`<div class="grp"><h3 class="dg">DIAGNOSTIC — language mix of served areas</h3>
+      <div class="mixbar">${mixBarHtml(r.mix)}</div><div class="mixleg">${mixLegHtml(r.mix)}</div>
+      <div class="note">Creative &amp; language guidance only — not a targeting filter, by design.</div></div>`:''}`;
+  document.getElementById('detail').style.display='block';
+  render0();
+}
+function render0(){ // refresh row highlight without rebuilding map styles
+  document.querySelectorAll('#rows tr').forEach(tr=>{
+    tr.classList.toggle('sel', tr.children[1].textContent===sel);});
+}
+function closeDetail(){
+  sel=null; document.getElementById('detail').style.display='none';
+  for(const l of Object.values(routeLayers)) l.setStyle({color:'#475569',weight:1,opacity:.25});
+  render();
+}
+boot();
+</script>
+</body>
+</html>
